@@ -1,8 +1,7 @@
 variable "resource_group_name" {
-  description = "Resource group containing the existing virtual network and the new NSGs and route tables."
+  description = "Resource group containing the existing VNet and the NSGs/route tables created here."
   type        = string
   nullable    = false
-
   validation {
     condition     = length(trimspace(var.resource_group_name)) > 0
     error_message = "resource_group_name must not be empty."
@@ -10,24 +9,63 @@ variable "resource_group_name" {
 }
 
 variable "location" {
-  description = "Azure region for NSGs and route tables. Use the same region as the virtual network."
+  description = "Azure region for NSGs and route tables; use the VNet's region."
   type        = string
   nullable    = false
-
   validation {
     condition     = length(trimspace(var.location)) > 0
     error_message = "location must not be empty."
   }
 }
 
-variable "virtual_network_name" {
-  description = "Name of the existing virtual network."
+variable "vnet_name" {
+  description = "Name of the existing VNet in resource_group_name."
   type        = string
   nullable    = false
-
   validation {
-    condition     = length(trimspace(var.virtual_network_name)) > 0
-    error_message = "virtual_network_name must not be empty."
+    condition     = length(trimspace(var.vnet_name)) > 0
+    error_message = "vnet_name must not be empty."
+  }
+}
+
+variable "label" {
+  description = "Prefix for ordinary subnet names. Empty omits this naming component."
+  type        = string
+  nullable    = false
+  validation {
+    condition     = var.label == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$", var.label))
+    error_message = "label must be empty or contain only letters, numbers, underscores, dots and hyphens."
+  }
+}
+
+variable "location_abbreviated" {
+  description = "Region abbreviation used in resource names and config/<region>/<environment>."
+  type        = string
+  nullable    = false
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9_-]*$", var.location_abbreviated))
+    error_message = "location_abbreviated must be a nonempty path-safe naming component."
+  }
+}
+
+variable "environment" {
+  description = "Environment selector used in resource names, configuration directories and CSV filenames."
+  type        = string
+  nullable    = false
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9_-]*$", var.environment))
+    error_message = "environment must be a nonempty path-safe naming component."
+  }
+}
+
+variable "vnet_suffix" {
+  description = "Optional naming component; original module default is vnet01. Set empty to omit it."
+  type        = string
+  default     = "vnet01"
+  nullable    = false
+  validation {
+    condition     = var.vnet_suffix == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$", var.vnet_suffix))
+    error_message = "vnet_suffix must be empty or a path-safe naming component."
   }
 }
 
@@ -38,150 +76,80 @@ variable "tags" {
   nullable    = false
 }
 
+variable "config_root" {
+  description = "CSV configuration root. Null preserves the original path.root/config convention; relative overrides are relative to the calling root."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.config_root == null ? true : length(trimspace(var.config_root)) > 0
+    error_message = "config_root must be null or a nonempty directory path."
+  }
+}
+
 variable "subnets" {
-  description = "Subnets keyed by their exact Azure names. NSGs and route tables are optional and owned by this module."
-  nullable    = false
-  type = map(object({
-    address_prefixes                  = list(string)
-    service_endpoints                 = optional(set(string), [])
-    default_outbound_access_enabled   = optional(bool, false)
-    private_endpoint_network_policies = optional(string, "Disabled")
-    network_security_group = optional(object({
-      name = string
-      rules = optional(map(object({
-        priority                   = number
-        direction                  = string
-        access                     = string
-        protocol                   = string
-        source_port_range          = optional(string, "*")
-        destination_port_range     = string
-        source_address_prefix      = string
-        destination_address_prefix = optional(string, "*")
-        description                = optional(string)
-      })), {})
-    }))
-    route_table = optional(object({
-      name                          = string
-      bgp_route_propagation_enabled = optional(bool, true)
-      routes = optional(map(object({
-        address_prefix         = string
-        next_hop_type          = string
-        next_hop_in_ip_address = optional(string)
-      })), {})
-    }))
+  description = "Subnets keyed by their logical name. Nonempty security_group enables a conventionally named NSG; the marker is not the Azure NSG name."
+  type = list(object({
+    name                                          = string
+    address_prefix                                = string
+    security_group                                = string
+    endpoints                                     = list(string)
+    default_outbound_access_enabled               = optional(bool)
+    private_endpoint_network_policies             = optional(string)
+    private_link_service_network_policies_enabled = optional(bool)
+    service_endpoint_policy_ids                   = optional(list(string), [])
+    bgp_route_propagation_enabled                 = optional(bool, true)
     delegation = optional(object({
       name         = string
       service_name = string
       actions      = optional(list(string), [])
     }))
   }))
+  nullable = false
 
   validation {
     condition = alltrue([
-      for name, subnet in var.subnets :
-      can(regex("^[A-Za-z0-9]([A-Za-z0-9_.-]{0,78}[A-Za-z0-9_])?$", name)) &&
-      try(length(subnet.address_prefixes) > 0 && alltrue([
-        for prefix in subnet.address_prefixes : can(cidrhost(prefix, 0))
-      ]), false)
-    ])
-    error_message = "Each subnet needs a valid Azure name (1-80 characters) and at least one valid IPv4 or IPv6 CIDR prefix."
+      for subnet in var.subnets : can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$", subnet.name))
+    ]) && length(distinct([for subnet in var.subnets : lower(subnet.name)])) == length(var.subnets)
+    error_message = "Subnet logical names must be nonempty, path-safe and unique (case insensitive)."
   }
 
   validation {
-    condition = alltrue([
-      for subnet in var.subnets : contains([
-        "Disabled", "Enabled", "NetworkSecurityGroupEnabled", "RouteTableEnabled"
-      ], subnet.private_endpoint_network_policies)
-    ])
-    error_message = "private_endpoint_network_policies must be Disabled, Enabled, NetworkSecurityGroupEnabled, or RouteTableEnabled."
+    condition     = alltrue([for subnet in var.subnets : can(cidrhost(subnet.address_prefix, 0))])
+    error_message = "Every subnet address_prefix must be a valid CIDR."
   }
 
   validation {
     condition = alltrue([
-      for name, subnet in var.subnets :
-      !contains(["GatewaySubnet", "AzureFirewallSubnet", "AzureFirewallManagementSubnet"], name) || subnet.network_security_group == null
+      for subnet in var.subnets : subnet.security_group != null && subnet.endpoints != null &&
+      (subnet.security_group == "" || try(length(trimspace(subnet.security_group)) > 0, false))
     ])
-    error_message = "GatewaySubnet, AzureFirewallSubnet, and AzureFirewallManagementSubnet must not have a network_security_group."
+    error_message = "security_group and endpoints cannot be null. Use an empty string to disable an NSG and [] for no endpoints."
   }
 
   validation {
     condition = alltrue([
-      for subnet in var.subnets : subnet.network_security_group == null ? true :
-      try(length(trimspace(subnet.network_security_group.name)) > 0, false)
-      ]) && length(distinct([
-        for subnet in var.subnets : lower(subnet.network_security_group.name) if subnet.network_security_group != null
-      ])) == length([
-      for subnet in var.subnets : subnet.network_security_group if subnet.network_security_group != null
+      for subnet in var.subnets :
+      contains(["GatewaySubnet", "AzureFirewallSubnet", "AzureFirewallManagementSubnet"], subnet.name) ? subnet.security_group == "" : true
     ])
-    error_message = "NSG names must be nonempty and unique within this module (case insensitive)."
-  }
-
-  validation {
-    condition = alltrue(flatten([
-      for subnet in var.subnets : subnet.network_security_group == null ? [] : [
-        for name, rule in subnet.network_security_group.rules : try(
-          length(trimspace(name)) > 0 &&
-          rule.priority >= 100 && rule.priority <= 4096 && floor(rule.priority) == rule.priority &&
-          contains(["Inbound", "Outbound"], rule.direction) &&
-          contains(["Allow", "Deny"], rule.access) &&
-          contains(["*", "Tcp", "Udp", "Icmp", "Esp", "Ah"], rule.protocol) &&
-          length(trimspace(rule.source_address_prefix)) > 0 &&
-          length(trimspace(rule.destination_address_prefix)) > 0 &&
-        (rule.description == null ? true : length(rule.description) <= 140), false)
-      ]
-    ]))
-    error_message = "NSG rules need a nonempty name and prefixes; integer priority 100-4096; valid direction, access, protocol; and descriptions of at most 140 characters."
+    error_message = "GatewaySubnet, AzureFirewallSubnet and AzureFirewallManagementSubnet cannot have an NSG; set security_group to an empty string."
   }
 
   validation {
     condition = alltrue([
-      for subnet in var.subnets : subnet.network_security_group == null ? true :
-      length(distinct([
-        for rule in subnet.network_security_group.rules : "${rule.direction}:${rule.priority}"
-      ])) == length(subnet.network_security_group.rules)
+      for subnet in var.subnets : subnet.endpoints == null ? true :
+      alltrue([for endpoint in subnet.endpoints : try(length(trimspace(endpoint)) > 0, false)]) &&
+      length(distinct(subnet.endpoints)) == length(subnet.endpoints)
     ])
-    error_message = "NSG rule priorities must be unique within each direction of an NSG."
-  }
-
-  validation {
-    condition = alltrue(flatten([
-      for subnet in var.subnets : subnet.network_security_group == null ? [] : [
-        for rule in subnet.network_security_group.rules : [
-          for port in [rule.source_port_range, rule.destination_port_range] : port == "*" ? true : try(
-            can(regex("^[0-9]+(-[0-9]+)?$", port)) &&
-            alltrue([for value in split("-", port) : tonumber(value) >= 0 && tonumber(value) <= 65535]) &&
-          tonumber(split("-", port)[0]) <= tonumber(reverse(split("-", port))[0]), false)
-        ]
-      ]
-    ]))
-    error_message = "NSG port ranges must be *, an integer 0-65535, or an ascending range such as 443-445."
+    error_message = "Service endpoints must be nonempty and unique."
   }
 
   validation {
     condition = alltrue([
-      for subnet in var.subnets : subnet.route_table == null ? true :
-      try(length(trimspace(subnet.route_table.name)) > 0, false)
-      ]) && length(distinct([
-        for subnet in var.subnets : lower(subnet.route_table.name) if subnet.route_table != null
-      ])) == length([
-      for subnet in var.subnets : subnet.route_table if subnet.route_table != null
+      for subnet in var.subnets : subnet.private_endpoint_network_policies == null ? true :
+      contains(["Disabled", "Enabled", "NetworkSecurityGroupEnabled", "RouteTableEnabled"], subnet.private_endpoint_network_policies)
     ])
-    error_message = "Route table names must be nonempty and unique within this module (case insensitive)."
-  }
-
-  validation {
-    condition = alltrue(flatten([
-      for subnet in var.subnets : subnet.route_table == null ? [] : [
-        for name, route in subnet.route_table.routes : try(
-          length(trimspace(name)) > 0 &&
-          (can(cidrhost(route.address_prefix, 0)) || can(regex("^[A-Za-z][A-Za-z0-9.-]*$", route.address_prefix))) &&
-          contains(["VirtualNetworkGateway", "VnetLocal", "Internet", "VirtualAppliance", "None"], route.next_hop_type) &&
-          (route.next_hop_type == "VirtualAppliance" ?
-            can(cidrhost("${route.next_hop_in_ip_address}/32", 0)) && can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$", route.next_hop_in_ip_address)) :
-        route.next_hop_in_ip_address == null), false)
-      ]
-    ]))
-    error_message = "Routes need nonempty names, CIDRs or service tags, a supported next_hop_type, and an IPv4 next_hop_in_ip_address only for VirtualAppliance."
+    error_message = "private_endpoint_network_policies must be Disabled, Enabled, NetworkSecurityGroupEnabled or RouteTableEnabled."
   }
 
   validation {
@@ -189,8 +157,9 @@ variable "subnets" {
       for subnet in var.subnets : subnet.delegation == null ? true : try(
         length(trimspace(subnet.delegation.name)) > 0 &&
         length(trimspace(subnet.delegation.service_name)) > 0 &&
-      alltrue([for action in subnet.delegation.actions : length(trimspace(action)) > 0]), false)
+        alltrue([for action in subnet.delegation.actions : length(trimspace(action)) > 0]), false
+      )
     ])
-    error_message = "Delegations require nonempty name and service_name; supplied actions must not be empty."
+    error_message = "Delegation name, service_name and any supplied actions must be nonempty."
   }
 }

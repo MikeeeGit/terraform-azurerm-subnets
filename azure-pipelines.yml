@@ -1,16 +1,16 @@
 # Azure Repos PR checks are enforced by main branch build-validation policy.
 trigger:
   branches:
-    include: [main]
+    include: [main, develop]
 pr:
   branches:
-    include: [main]
+    include: [main, develop]
 resources:
   repositories:
     - repository: deliveryTemplates
       type: git
       name: terraform-delivery-templates
-      ref: 50ba5619ce143b9d142790691bc13e13c3ef809a
+      ref: 472c0c5bebe7f07aca8c51c7fabf0a47280a0b25
 jobs:
   - template: azure-pipelines/jobs/terraform-validate.yml@deliveryTemplates
     parameters:

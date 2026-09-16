@@ -28,3 +28,6 @@ terraform.rc
 __pycache__/
 *.pyc
 # Keep provider lockfiles in version control for reproducible repository CI.
+
+# Shared helper context, saved plans and private manifests.
+.terraform-delivery/
