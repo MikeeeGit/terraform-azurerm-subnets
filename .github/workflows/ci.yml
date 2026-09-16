@@ -2,7 +2,7 @@ name: Terraform CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 permissions:
   contents: read
@@ -12,9 +12,9 @@ concurrency:
 jobs:
   terraform:
     name: Terraform root
-    uses: MikeeeGit/terraform-delivery-templates/.github/workflows/terraform-validate.yml@50ba5619ce143b9d142790691bc13e13c3ef809a
+    uses: MikeeeGit/terraform-delivery-templates/.github/workflows/terraform-validate.yml@472c0c5bebe7f07aca8c51c7fabf0a47280a0b25
     with:
-      template-ref: 50ba5619ce143b9d142790691bc13e13c3ef809a
+      template-ref: 472c0c5bebe7f07aca8c51c7fabf0a47280a0b25
       directory: .
       test-directory: tests
   examples:
@@ -24,7 +24,7 @@ jobs:
       matrix:
         directory:
           - examples/basic
-    uses: MikeeeGit/terraform-delivery-templates/.github/workflows/terraform-validate.yml@50ba5619ce143b9d142790691bc13e13c3ef809a
+    uses: MikeeeGit/terraform-delivery-templates/.github/workflows/terraform-validate.yml@472c0c5bebe7f07aca8c51c7fabf0a47280a0b25
     with:
-      template-ref: 50ba5619ce143b9d142790691bc13e13c3ef809a
+      template-ref: 472c0c5bebe7f07aca8c51c7fabf0a47280a0b25
       directory: ${{ matrix.directory }}

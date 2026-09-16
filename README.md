@@ -1,178 +1,162 @@
 # terraform-azurerm-subnets
 
-[![Terraform CI](https://github.com/MikeeeGit/terraform-azurerm-subnets/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MikeeeGit/terraform-azurerm-subnets/actions/workflows/ci.yml)
+Creates subnets in an existing Azure VNet, with CSV-driven Network Security Groups (NSGs), route tables and associations. This public edition preserves the original `AZ-TF-MOD-subnets` list interface, logical keys, naming conventions and policy-file workflow.
 
-A Terraform module for subnets in an existing Azure virtual network, with optional network security groups, user-defined routes, service endpoints, and a service delegation. Subnets use exact names supplied by the caller, making reserved Azure service names work in every VNet.
-
-This repository is the redesigned public successor to `AZ-TF-MOD-subnets`. Configuration is typed HCL; there are no implicit CSV files, root-directory lookups, embedded environment names, or provider credentials.
-
-## Requirements
-
-- Terraform `>= 1.9.0, < 2.0.0`.
-- HashiCorp AzureRM provider `>= 4.0.0, < 5.0.0`, configured by the caller.
-- An existing VNet in the supplied resource group. Its address space must contain the subnet prefixes.
-
-Do not mix this module's standalone subnets with inline `subnet` blocks on the parent VNet. Do not manage its NSG rules or routes in another module or with inline blocks on the same NSG/route table.
+Terraform **>= 1.9, < 2.0** and AzureRM **>= 4.33, < 5.0** are required. CI uses Terraform 1.16.3. Configure the Azure provider and authentication in the calling root; this module contains no backend, subscription IDs or credentials.
 
 ## Usage
 
-For a local checkout beside the calling Terraform root:
-
 ```hcl
 module "subnets" {
-  source = "../terraform-azurerm-subnets"
+  source = "git::https://github.com/MikeeeGit/terraform-azurerm-subnets.git?ref=v0.2.0"
 
-  resource_group_name  = "rg-network-example"
+  resource_group_name  = "example-uks-dev-network-rg"
   location             = "uksouth"
-  virtual_network_name = "vnet-example"
-  tags                 = { environment = "example", managed_by = "terraform" }
+  vnet_name            = "example-uks-dev-vnet-01"
+  label                = "uks-dev"
+  location_abbreviated = "uks"
+  environment          = "dev"
+  vnet_suffix          = ""
 
-  subnets = {
-    app = {
-      address_prefixes = ["10.20.1.0/24"]
-      network_security_group = {
-        name = "nsg-example-app"
-        rules = {
-          allow-https-from-vnet = {
-            priority               = 100
-            direction              = "Inbound"
-            access                 = "Allow"
-            protocol               = "Tcp"
-            source_address_prefix  = "VirtualNetwork"
-            destination_port_range = "443"
-          }
-        }
-      }
-    }
-    AzureFirewallSubnet = {
-      address_prefixes = ["10.20.2.0/26"]
-    }
-  }
+  subnets = [{
+    name           = "app"
+    address_prefix = "10.20.1.0/24"
+    security_group = "enabled"
+    endpoints      = ["Microsoft.Storage"]
+  }]
+
+  tags = { environment = "dev" }
 }
 ```
 
-Use a version tag or commit SHA when consuming a published Git source. See the [self-contained basic example](examples/basic) for provider configuration and prerequisite resources.
+The VNet must already exist or be created by the caller. Passing a VNet resource's name creates the usual Terraform dependency. See the self-contained [basic example](examples/basic), including its CSV files.
 
-## Behavior and scope
+## CSV policies
 
-Default outbound access is disabled for every subnet. Configure an explicit egress path, such as a NAT Gateway or firewall, when workloads need outbound internet access. This module does not create that path.
+Place configuration under the **calling Terraform root**, rather than inside the downloaded module:
 
-NSGs and route tables are opt-in. Creating an NSG with no custom rules leaves Azure's built-in default rules in effect, including virtual-network inbound access; neither an empty rules map nor the HTTPS example is a deny-all policy. NSG rules and routes are separate resources so removing the final entry removes the managed rule or route.
+```text
+config/
+  uks/
+    dev/
+      dev_app_nsg.csv
+      dev_app_route_table.csv
+```
 
-NSGs are rejected on `GatewaySubnet`, `AzureFirewallSubnet`, and `AzureFirewallManagementSubnet`. `AzureBastionSubnet` may have an NSG, but the caller must include the rules required by Azure Bastion. No name is prefixed, suffixed, or rewritten.
+The general paths are `config/<location_abbreviated>/<environment>/<environment>_<logical-subnet-name>_nsg.csv` and `..._route_table.csv`. The filenames use the input `name`, even when the generated Azure subnet name has a prefix or suffix. Set `config_root` to override the configuration directory; the default is `${path.root}/config`. Files must exist before Terraform starts planning.
 
-The default `private_endpoint_network_policies = "Disabled"` applies to private endpoints; it does not disable an associated NSG for ordinary workload interfaces. Choose `Enabled`, `NetworkSecurityGroupEnabled`, or `RouteTableEnabled` when private endpoints should participate in those policies.
+NSG CSV:
 
-Azure validates address-space containment, overlapping subnets, service-specific subnet sizing, service tags, delegations and actions, and region capabilities. This module validates CIDR syntax, names, policy enums, NSG rules and ports, and route next-hop consistency. It does not claim to validate every Azure service requirement offline.
+```csv
+name,priority,direction,access,protocol,source_port_range,destination_port_range,source_address_prefix,destination_address_prefix
+allow-https,100,Inbound,Allow,Tcp,*,443,VirtualNetwork,*
+```
 
-NSG and route-table associations are created after the subnet. Subscriptions with Azure Policies requiring these associations in the initial subnet creation request need a different provisioning pattern. This module does not bypass those policies.
+The nine original headers are required for nonempty files. An additional `description` column is supported. Standard quoted CSV fields work, including commas in descriptions. Other additional columns are ignored. Port values accept `*`, a port from 0 to 65535, or an ascending range such as `1024-65535`. Supply address prefixes or Azure service tags, and use `*` explicitly where intended. Rule names must be unique; priorities must be unique **within each direction**, between 100 and 4096. Supported protocols are `Tcp`, `Udp`, `Icmp`, `Esp`, `Ah` and `*`.
 
-## Inputs
+Route CSV:
 
-| Input | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `resource_group_name` | `string` | Required | Existing VNet's resource group; also used for NSGs and route tables. |
-| `location` | `string` | Required | Region for NSGs and route tables; match the VNet. |
-| `virtual_network_name` | `string` | Required | Existing VNet name. |
-| `subnets` | `map(object)` | Required | Exact subnet names mapped to the definition below. `{}` creates nothing. |
-| `tags` | `map(string)` | `{}` | Tags for NSGs and route tables. Azure subnets do not support tags. |
+```csv
+name,address_prefix,next_hop_type,next_hop_in_ip_address
+default,0.0.0.0/0,VirtualAppliance,10.20.0.4
+monitor,AzureMonitor,Internet,
+```
 
-Each `subnets` value accepts:
+All four headers are required. Route names must be unique. Destinations accept a CIDR or service tag. Next-hop types are `VirtualNetworkGateway`, `VnetLocal`, `Internet`, `VirtualAppliance` and `None`. Only `VirtualAppliance` requires and accepts a next-hop IPv4 address. That appliance must be provisioned and configured separately; the synthetic address above is only a schema example.
 
-| Field | Type | Default |
-| --- | --- | --- |
-| `address_prefixes` | `list(string)` | Required, nonempty valid CIDRs. |
-| `service_endpoints` | `set(string)` | `[]` |
-| `default_outbound_access_enabled` | `bool` | `false` |
-| `private_endpoint_network_policies` | `string` | `"Disabled"` |
-| `network_security_group` | `object` | `null` |
-| `route_table` | `object` | `null` |
-| `delegation` | `object` | `null` |
+| File state | NSG behavior when enabled | Route-table behavior |
+|---|---|---|
+| Missing | NSG with zero custom rules | No route table or association |
+| Zero bytes / whitespace only | Same as missing | Same as missing |
+| Valid headers only | Same as missing | Same as missing |
+| Valid data rows | Manage all CSV rules inline | Create table, routes and association |
+| Malformed CSV, missing headers or invalid rows | Plan fails with the file path | Plan fails with the file path |
 
-The complete type contract is in [variables.tf](variables.tf).
+Removing the final NSG row explicitly sets `security_rule = []`, clearing previously managed custom rules while retaining the NSG. Removing the final route row removes the table and its association, preserving original behavior. Deleting a policy file has the same effect as emptying it; review the plan for these changes.
 
-### Network security groups
+NSG files are decoded and validated even when NSG creation is disabled, so their diagnostic outputs remain useful. An NSG keeps Azure's built-in default rules; an example HTTPS rule alone does **not** restrict all traffic to HTTPS. Do not manage the same NSG rules or route-table routes with separate Terraform resources or another deployment system.
 
-`network_security_group` requires `name` and optionally accepts `rules` (a map, default `{}`). Each rule key is its exact Azure name. NSG names must be unique within this module. Each rule accepts:
+## Inputs and naming
 
-| Field | Type | Default or allowed values |
-| --- | --- | --- |
-| `priority` | `number` | Required integer, 100-4096; unique within each direction of its NSG. |
-| `direction` | `string` | Required: `Inbound` or `Outbound`. |
-| `access` | `string` | Required: `Allow` or `Deny`. |
-| `protocol` | `string` | Required: `*`, `Tcp`, `Udp`, `Icmp`, `Esp`, or `Ah`. |
-| `source_port_range` | `string` | `"*"`; a port or inclusive range also accepted. |
-| `destination_port_range` | `string` | Required: `"*"`, a port, or an inclusive range such as `"8000-8080"`. |
-| `source_address_prefix` | `string` | Required: CIDR, address, service tag, or `"*"`. |
-| `destination_address_prefix` | `string` | `"*"`; CIDR, address, or service tag also accepted. |
-| `description` | `string` | `null`; maximum 140 characters when supplied. |
+| Input | Type | Default / meaning |
+|---|---|---|
+| `resource_group_name` | `string` | Required; existing VNet's resource group |
+| `location` | `string` | Required; Azure region for NSGs/tables |
+| `vnet_name` | `string` | Required; existing VNet name |
+| `label` | `string` | Required; ordinary subnet prefix; may be empty |
+| `location_abbreviated` | `string` | Required; naming/config region selector |
+| `environment` | `string` | Required; naming/config environment selector |
+| `subnets` | `list(object)` | Required; schema below; may be empty |
+| `vnet_suffix` | `string` | `"vnet01"`; set `""` to omit |
+| `config_root` | `string` | `null` → calling root's `config/` |
+| `tags` | `map(string)` | `{}`; applied to NSGs/tables only |
 
-This initial API supports one source and destination prefix and one source and destination port range per rule. Use multiple named rules for additional ranges. Application security groups and existing externally managed NSGs are outside this module's scope.
+Each subnet requires `name`, `address_prefix`, `security_group` and `endpoints`. Logical names must be unique, and `address_prefix` is one CIDR string.
 
-### Route tables
+**`security_group` is an enable marker, not an NSG name.** Any nonempty string enables creation; `""` disables it. The string `"false"` still enables an NSG, matching the original interface. Use `endpoints = []` when no service endpoints are required.
 
-`route_table` requires `name`, with optional `bgp_route_propagation_enabled` (default `true`) and `routes` (map, default `{}`). Each route key is its exact Azure name. Route-table names must be unique within this module. Each route requires `address_prefix` (CIDR or Azure service tag) and `next_hop_type` (`VirtualNetworkGateway`, `VnetLocal`, `Internet`, `VirtualAppliance`, or `None`).
+| Resource | Generated Azure name |
+|---|---|
+| Ordinary subnet | `<label>-<vnet_suffix>-<logical-name>` |
+| NSG | `<region>-<environment>-<vnet_suffix>-<logical-name>-nsg` |
+| Route table | `<region>-<environment>-<vnet_suffix>-<logical-name>-rt` |
+| Gateway route table | `GatewaySubnet-<region>-rt` |
 
-Set `next_hop_in_ip_address` to an IPv4 address for `VirtualAppliance`; leave it unset for every other next-hop type. Example:
+Empty components are omitted. For example, `label = "uks-dev"`, `vnet_suffix = ""` and `name = "app"` produce `uks-dev-app`, `uks-dev-app-nsg` and `uks-dev-app-rt`.
+
+`GatewaySubnet`, `AzureFirewallSubnet`, `AzureFirewallManagementSubnet` and `AzureBastionSubnet` keep their exact Azure names in every VNet. The former estate-specific hub allowlist is removed. NSGs are rejected for the gateway and both firewall subnet names. Bastion may have an NSG, but the caller must provide Azure's required Bastion rules.
+
+Optional per-subnet attributes:
+
+| Attribute | Type | Default |
+|---|---|---|
+| `default_outbound_access_enabled` | `bool` | `null` — provider behavior |
+| `private_endpoint_network_policies` | `string` | `null` — provider behavior |
+| `private_link_service_network_policies_enabled` | `bool` | `null` — provider behavior |
+| `service_endpoint_policy_ids` | `list(string)` | `[]` |
+| `bgp_route_propagation_enabled` | `bool` | `true` on a created route table |
+| `delegation` | Object below | `null` |
 
 ```hcl
-route_table = {
-  name = "rt-example-app"
-  routes = {
-    default-egress = {
-      address_prefix         = "0.0.0.0/0"
-      next_hop_type          = "VirtualAppliance"
-      next_hop_in_ip_address = "10.20.2.4"
-    }
-  }
+delegation = {
+  name         = "web"
+  service_name = "Microsoft.Web/serverFarms"
+  actions      = ["Microsoft.Network/virtualNetworks/subnets/action"] # optional; defaults to []
 }
 ```
 
-This routes traffic to an existing reachable appliance; it does not create or configure that appliance.
-
-### Delegation
-
-`delegation` requires `name` and `service_name`. `actions` is an optional list, default `[]`. Supply the exact service-specific actions Azure expects to avoid drift from server-added defaults. One delegation is supported per subnet.
+Private endpoint policy values are `Disabled`, `Enabled`, `NetworkSecurityGroupEnabled` or `RouteTableEnabled`. Omitted outbound access settings are deliberately **not** forced to false: the original module left that decision to the provider. Set the value explicitly when choosing an egress policy, and configure any required NAT, firewall or other egress separately. Provider and Azure defaults can evolve; review provider upgrades.
 
 ## Outputs
 
-All outputs are maps keyed by the subnet input key.
+Every map is keyed by the input **logical subnet name**.
 
 | Output | Value |
-| --- | --- |
-| `ids` | Subnet resource IDs; dependency includes completed NSG and route-table associations. |
-| `names` | Exact subnet names. |
-| `address_prefixes` | Configured address-prefix lists. |
-| `network_security_group_ids` | NSG IDs for subnets that requested one. |
-| `route_table_ids` | Route-table IDs for subnets that requested one. |
+|---|---|
+| `subnets` | Original full subnet resource map |
+| `file_paths` / `route_table_file_paths` | Original resolved CSV paths, including missing files |
+| `subnet_nsg_rules` / `subnet_route_table_rules` | Original decoded CSV row lists |
+| `rootpath` | Original calling-root diagnostic path |
+| `subnet_ids` / `ids` | Subnet IDs after associations |
+| `subnet_address_prefixes` / `address_prefixes` | Address-prefix lists |
+| `names` | Generated Azure subnet names |
+| `network_security_group_ids` / `route_table_ids` | Created policy-resource IDs |
 
-## Migrating from AZ-TF-MOD-subnets
+This leaf module does not create VNets, peerings, DNS zones, private endpoints or diagnostic settings. The VNet and composition repositories own those capabilities.
 
-This is a new public API, not a drop-in update to an existing state file.
-
-1. Convert the old subnet list to a map keyed by each **actual deployed subnet name**. Legacy generated prefixes are no longer added.
-2. Rename `vnet_name` to `virtual_network_name`, wrap `address_prefix` as `address_prefixes`, and rename `endpoints` to `service_endpoints`.
-3. Replace `security_group` flags and discovered CSV files with an explicit `network_security_group` object and typed rule map. Convert route CSV content to an explicit `route_table` and route map. Supply existing NSG and route-table names when retaining those resources.
-4. Remove `label`, `location_abbreviated`, `environment`, and `vnet_suffix`; naming and tags belong to the caller.
-5. Review outbound requirements before accepting the new `false` default. Provide explicit egress for workloads that need it.
-6. Plan an explicit state migration/import for renamed resource addresses, association resources, and the split from inline rules/routes to standalone resources. Keep a secure state backup and inspect the plan for replacements. Do not run the old and new configurations against the same resources simultaneously.
-
-No state migration is performed by this repository. Outputs exposing local paths and parsed CSV files have been removed. This module does not implement private DNS zone links or diagnostic settings; those belong to separate resources.
-
-## Validation
+## Validation and contribution
 
 ```sh
 terraform fmt -check -recursive
-terraform init -backend=false -input=false
+terraform init -backend=false
 terraform validate
 terraform test
+terraform -chdir=examples/basic init -backend=false
+terraform -chdir=examples/basic validate
 ```
 
-Tests use Terraform's mocked AzureRM provider. They cover reserved subnet names, private defaults, optional resources, custom rules/routes, tag and delegation propagation, removal of all custom rules/routes, and rejected inputs. The mock `apply` run creates only in-memory test state and makes no Azure API calls. Passing these tests is not proof of a deployment in Azure.
+All tests use mocked AzureRM providers and synthetic CSV fixtures. They cover the calling-root path convention, populated/missing/header-only/zero-byte files, clearing the final NSG rule, routes and associations, naming, optional settings and rejected inputs. Tests require no Azure credentials and create no cloud resources. They do not prove Azure API behavior, actual network reachability, VNet CIDR containment or overlapping-prefix acceptance.
 
-## References
+GitHub and Azure DevOps use the same pinned, credential-free validation templates. See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [migration notes](docs/MIGRATION.md) and [CHANGELOG.md](CHANGELOG.md). Apache-2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-- [AzureRM subnet resource](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/subnet)
-- [AzureRM network security rule resource](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/network_security_rule)
-- [AzureRM route resource](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/route)
-- [Azure default security rules](https://learn.microsoft.com/azure/virtual-network/network-security-groups-overview#default-security-rules)
+Provider references: [subnets](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/subnet), [NSGs](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/network_security_group), [route tables](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/route_table).

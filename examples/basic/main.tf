@@ -3,7 +3,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = ">= 4.0.0, < 5.0.0"
+      version = ">= 4.33.0, < 5.0.0"
     }
   }
 }
@@ -13,12 +13,12 @@ provider "azurerm" {
 }
 
 resource "azurerm_resource_group" "example" {
-  name     = "rg-subnets-example"
+  name     = "example-uks-dev-network-rg"
   location = "uksouth"
 }
 
 resource "azurerm_virtual_network" "example" {
-  name                = "vnet-subnets-example"
+  name                = "example-uks-dev-vnet-01"
   resource_group_name = azurerm_resource_group.example.name
   location            = azurerm_resource_group.example.location
   address_space       = ["10.20.0.0/16"]
@@ -29,37 +29,49 @@ module "subnets" {
 
   resource_group_name  = azurerm_resource_group.example.name
   location             = azurerm_resource_group.example.location
-  virtual_network_name = azurerm_virtual_network.example.name
+  vnet_name            = azurerm_virtual_network.example.name
+  label                = "uks-dev"
+  location_abbreviated = "uks"
+  environment          = "dev"
+  vnet_suffix          = ""
   tags = {
     environment = "example"
     managed_by  = "terraform"
   }
 
-  subnets = {
-    app = {
-      address_prefixes  = ["10.20.1.0/24"]
-      service_endpoints = ["Microsoft.Storage"]
-      network_security_group = {
-        name = "nsg-subnets-example-app"
-        rules = {
-          allow-https-from-vnet = {
-            priority               = 100
-            direction              = "Inbound"
-            access                 = "Allow"
-            protocol               = "Tcp"
-            source_address_prefix  = "VirtualNetwork"
-            destination_port_range = "443"
-          }
-        }
-      }
+  # No config_root override: CSVs are read from this root's config/uks/dev/.
+  subnets = [
+    {
+      name           = "app"
+      address_prefix = "10.20.1.0/24"
+      security_group = "enabled"
+      endpoints      = ["Microsoft.Storage"]
+    },
+    {
+      name           = "private-endpoints"
+      address_prefix = "10.20.2.0/24"
+      security_group = ""
+      endpoints      = []
     }
-    private-endpoints = {
-      address_prefixes = ["10.20.2.0/24"]
-    }
-  }
+  ]
 }
 
 output "subnet_ids" {
-  description = "Created subnet IDs."
-  value       = module.subnets.ids
+  description = "Subnet IDs keyed by logical name."
+  value       = module.subnets.subnet_ids
+}
+
+output "subnet_names" {
+  description = "Generated Azure names."
+  value       = module.subnets.names
+}
+
+output "nsg_csv_paths" {
+  description = "Policy files resolved relative to the calling root."
+  value       = module.subnets.file_paths
+}
+
+output "nsg_rules" {
+  description = "Decoded NSG rules loaded from example CSV files."
+  value       = module.subnets.subnet_nsg_rules
 }
