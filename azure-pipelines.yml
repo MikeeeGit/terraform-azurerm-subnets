@@ -1,0 +1,41 @@
+# For Azure Repos configure main branch build validation policies externally.
+# PR YAML triggers apply to GitHub-hosted sources; secure fork builds in project settings.
+trigger:
+  branches:
+    include: [main]
+pr:
+  branches:
+    include: [main]
+pool:
+  vmImage: ubuntu-latest
+steps:
+  - checkout: self
+    persistCredentials: false
+  - bash: |
+      set -euo pipefail
+      version=1.16.3
+      install_dir="$(Agent.TempDirectory)/terraform"
+      mkdir -p "$install_dir"
+      cd "$install_dir"
+      archive="terraform_${version}_linux_amd64.zip"
+      curl --fail --silent --show-error --location --output "$archive" "https://releases.hashicorp.com/terraform/${version}/$archive"
+      curl --fail --silent --show-error --location --output SHA256SUMS "https://releases.hashicorp.com/terraform/${version}/terraform_${version}_SHA256SUMS"
+      awk -v filename="$archive" '$2 == filename { print }' SHA256SUMS > expected.sha256
+      test -s expected.sha256
+      sha256sum --check expected.sha256
+      unzip -o "$archive" terraform
+      echo "##vso[task.prependpath]$install_dir"
+    displayName: Install checksum-verified Terraform
+  - bash: |
+      set -euo pipefail
+      terraform fmt -check -recursive
+      terraform init -backend=false -input=false -lockfile=readonly
+      terraform validate -no-color
+      terraform test -no-color
+    displayName: Validate and run mocked tests
+  - bash: |
+      set -euo pipefail
+      terraform init -backend=false -input=false -lockfile=readonly
+      terraform validate -no-color
+    workingDirectory: $(Build.SourcesDirectory)/examples/basic
+    displayName: Validate examples/basic

@@ -1,0 +1,30 @@
+# Runtime Terraform data and potentially sensitive deployment inputs
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.plan
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
+*.hcl.local
+backend*.hcl
+**/backend*.hcl
+*.pem
+*.key
+*.pfx
+.env
+.env.*
+!.env.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+__pycache__/
+*.pyc
+# Keep provider lockfiles in version control for reproducible repository CI.
