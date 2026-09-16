@@ -10,23 +10,21 @@ concurrency:
   group: terraform-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  validate:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
-        with:
-          terraform_version: 1.16.3
-          terraform_wrapper: false
-      - run: terraform fmt -check -recursive
-      - run: terraform init -backend=false -input=false -lockfile=readonly
-      - run: terraform validate -no-color
-      - run: terraform test -no-color
-      - name: Validate examples/basic
-        working-directory: examples/basic
-        run: |
-          terraform init -backend=false -input=false -lockfile=readonly
-          terraform validate -no-color
+  terraform:
+    name: Terraform root
+    uses: MikeeeGit/terraform-delivery-templates/.github/workflows/terraform-validate.yml@50ba5619ce143b9d142790691bc13e13c3ef809a
+    with:
+      template-ref: 50ba5619ce143b9d142790691bc13e13c3ef809a
+      directory: .
+      test-directory: tests
+  examples:
+    name: Example (${{ matrix.directory }})
+    strategy:
+      fail-fast: false
+      matrix:
+        directory:
+          - examples/basic
+    uses: MikeeeGit/terraform-delivery-templates/.github/workflows/terraform-validate.yml@50ba5619ce143b9d142790691bc13e13c3ef809a
+    with:
+      template-ref: 50ba5619ce143b9d142790691bc13e13c3ef809a
+      directory: ${{ matrix.directory }}

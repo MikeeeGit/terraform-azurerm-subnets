@@ -1,5 +1,7 @@
 # terraform-azurerm-subnets
 
+[![Terraform CI](https://github.com/MikeeeGit/terraform-azurerm-subnets/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MikeeeGit/terraform-azurerm-subnets/actions/workflows/ci.yml)
+
 A Terraform module for subnets in an existing Azure virtual network, with optional network security groups, user-defined routes, service endpoints, and a service delegation. Subnets use exact names supplied by the caller, making reserved Azure service names work in every VNet.
 
 This repository is the redesigned public successor to `AZ-TF-MOD-subnets`. Configuration is typed HCL; there are no implicit CSV files, root-directory lookups, embedded environment names, or provider credentials.
