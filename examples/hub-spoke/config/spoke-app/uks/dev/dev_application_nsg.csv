@@ -1,0 +1,5 @@
+name,priority,direction,access,protocol,source_port_range,destination_port_range,source_address_prefix,destination_address_prefix
+allow-hub-https,100,Inbound,Allow,Tcp,*,443,10.60.1.0/24,10.61.1.0/24
+deny-other-vnet-inbound,4000,Inbound,Deny,*,*,*,VirtualNetwork,*
+allow-monitoring-https,200,Outbound,Allow,Tcp,*,443,*,AzureMonitor
+deny-other-internet-outbound,4000,Outbound,Deny,*,*,*,*,Internet

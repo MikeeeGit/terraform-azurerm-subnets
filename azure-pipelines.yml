@@ -21,3 +21,8 @@ jobs:
     parameters:
       jobName: Example1
       directory: examples/basic
+  - template: azure-pipelines/jobs/terraform-validate.yml@deliveryTemplates
+    parameters:
+      jobName: HubSpoke
+      directory: examples/hub-spoke
+      testDirectory: tests

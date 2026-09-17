@@ -144,6 +144,11 @@ Every map is keyed by the input **logical subnet name**.
 
 This leaf module does not create VNets, peerings, DNS zones, private endpoints or diagnostic settings. The VNet and composition repositories own those capabilities.
 
+## Examples
+
+- [Basic](examples/basic): one VNet with CSV-backed subnet policy.
+- [Hub and two spokes](examples/hub-spoke): CSV-backed policies, reciprocal peerings, caller-owned DNS and optional NAT egress.
+
 ## Validation and contribution
 
 ```sh

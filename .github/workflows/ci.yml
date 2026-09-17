@@ -24,7 +24,9 @@ jobs:
       matrix:
         directory:
           - examples/basic
+          - examples/hub-spoke
     uses: MikeeeGit/terraform-delivery-templates/.github/workflows/terraform-validate.yml@472c0c5bebe7f07aca8c51c7fabf0a47280a0b25
     with:
       template-ref: 472c0c5bebe7f07aca8c51c7fabf0a47280a0b25
       directory: ${{ matrix.directory }}
+      test-directory: ${{ matrix.directory == 'examples/hub-spoke' && 'tests' || '' }}

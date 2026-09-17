@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- Add a hub and two-spoke composition example with CSV subnet policy, reciprocal peering and optional NAT.
+- Add four mocked topology/policy checks and validate the example on both CI platforms.
+- Preserve the existing module interface.
+
 ## 0.2.0
 
 Restore the original subnet module's list interface, logical keys, resource addresses, naming and first-class root-relative CSV workflow. Retain full-resource and diagnostic outputs, with additive ID/name/prefix outputs.
