@@ -12,9 +12,9 @@ concurrency:
 jobs:
   terraform:
     name: Terraform root
-    uses: MikeeeGit/terraform-delivery-templates/.github/workflows/terraform-validate.yml@472c0c5bebe7f07aca8c51c7fabf0a47280a0b25
+    uses: MikeeeGit/terraform-delivery-templates/.github/workflows/terraform-validate.yml@281d779aced9c6e7da082b5e57c85639dc1858df
     with:
-      template-ref: 472c0c5bebe7f07aca8c51c7fabf0a47280a0b25
+      template-ref: 281d779aced9c6e7da082b5e57c85639dc1858df
       directory: .
       test-directory: tests
   examples:
@@ -25,8 +25,8 @@ jobs:
         directory:
           - examples/basic
           - examples/hub-spoke
-    uses: MikeeeGit/terraform-delivery-templates/.github/workflows/terraform-validate.yml@472c0c5bebe7f07aca8c51c7fabf0a47280a0b25
+    uses: MikeeeGit/terraform-delivery-templates/.github/workflows/terraform-validate.yml@281d779aced9c6e7da082b5e57c85639dc1858df
     with:
-      template-ref: 472c0c5bebe7f07aca8c51c7fabf0a47280a0b25
+      template-ref: 281d779aced9c6e7da082b5e57c85639dc1858df
       directory: ${{ matrix.directory }}
       test-directory: ${{ matrix.directory == 'examples/hub-spoke' && 'tests' || '' }}
