@@ -165,3 +165,7 @@ All tests use mocked AzureRM providers and synthetic CSV fixtures. They cover th
 GitHub and Azure DevOps use the same pinned, credential-free validation templates. See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [migration notes](docs/MIGRATION.md) and [CHANGELOG.md](CHANGELOG.md). Apache-2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 Provider references: [subnets](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/subnet), [NSGs](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/network_security_group), [route tables](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/route_table).
+
+## CI change scope
+
+Markdown-only edits use lightweight required GitHub checks and are excluded from automatic Azure validation builds. Changes to Terraform, application code, scripts, workflow definitions or executable examples still run full validation, including examples stored under docs/. Mixed changes also run full validation. Manual GitHub runs and unknown Git comparison ranges default to full validation.
