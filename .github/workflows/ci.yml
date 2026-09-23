@@ -12,7 +12,7 @@ concurrency:
 jobs:
   terraform:
     name: Terraform root
-    uses: MikeeeGit/terraform-delivery-templates/.github/workflows/terraform-validate.yml@281d779aced9c6e7da082b5e57c85639dc1858df
+    uses: MikeeeGit/terraform-delivery-templates/.github/workflows/terraform-validate.yml@ddff08c493982539bb6d46938f73a67ccd85e633
     with:
       template-ref: 281d779aced9c6e7da082b5e57c85639dc1858df
       directory: .
@@ -25,7 +25,7 @@ jobs:
         directory:
           - examples/basic
           - examples/hub-spoke
-    uses: MikeeeGit/terraform-delivery-templates/.github/workflows/terraform-validate.yml@281d779aced9c6e7da082b5e57c85639dc1858df
+    uses: MikeeeGit/terraform-delivery-templates/.github/workflows/terraform-validate.yml@ddff08c493982539bb6d46938f73a67ccd85e633
     with:
       template-ref: 281d779aced9c6e7da082b5e57c85639dc1858df
       directory: ${{ matrix.directory }}
